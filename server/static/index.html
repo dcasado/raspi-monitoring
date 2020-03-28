@@ -1,0 +1,67 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <title>Raspi Monitoring</title>
+    <link rel="stylesheet" type="text/css" href="./styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body>
+    <script>
+        let url = window.location.protocol + "//" + window.location.hostname;
+        if (window.location.port !== "") {
+            url += ":" + window.location.port;
+        }
+        fetchData(url)
+        setInterval(function () {
+            fetchData(url)
+        }, 5000);
+
+        function fetchData(url) {
+            fetch(url + "/data")
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (data) {
+                    let newTbody = document.createElement("tbody");
+                    newTbody.setAttribute("id", "data-table-body");
+                    for (const id in data) {
+                        const raspi = data[id]
+                        newTbody.appendChild(buildRow(raspi))
+                    }
+                    let oldTbody = document.getElementById("data-table-body");
+                    oldTbody.parentNode.replaceChild(newTbody, oldTbody)
+                });
+        }
+
+        function buildRow(raspi) {
+            let tr = document.createElement("tr");
+            tr.appendChild(buildColumn(raspi["hostname"]));
+            tr.appendChild(buildColumn(raspi["cpuTemp"]));
+            tr.appendChild(buildColumn(new Date(raspi["timestamp"]).toLocaleString()));
+            return tr;
+        }
+
+        function buildColumn(data) {
+            let td = document.createElement("td");
+            let content = document.createTextNode(data);
+            td.appendChild(content);
+            return td;
+        }
+    </script>
+    <h1>Raspberry pi data</h1>
+    <table id="data-table">
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>CPU Temperature</th>
+                <th>Last seen</th>
+            </tr>
+        </thead>
+        <tbody id="data-table-body">
+        </tbody>
+    </table>
+</body>
+
+</html>
