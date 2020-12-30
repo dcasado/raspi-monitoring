@@ -7,22 +7,31 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
-type raspi struct {
-	Hostname  string `json:"hostname"`
-	CpuTemp   int8   `json:"cpuTemp"`
-	Timestamp int64  `json:"timestamp"`
+type stats struct {
+	Hostname  string   `json:"hostname"`
+	CpuTemp   int8     `json:"cpuTemp"`
+	RAMStats  ramStats `json:"ramStats"`
+	Timestamp int64    `json:"timestamp"`
+}
+
+type ramStats struct {
+	Total     uint32 `json:"total"`
+	Available uint32 `json:"available"`
+	Used      uint32 `json:"used"`
 }
 
 func main() {
 	hostname := getHostname()
 	for {
 		cpuTemp := readCPUTemp()
-		body := buildBody(hostname, cpuTemp)
+		ramStats := readRAMStats()
+		body := buildBody(hostname, cpuTemp, ramStats)
 		sendRequest(body)
 		time.Sleep(5 * time.Second)
 	}
@@ -53,8 +62,21 @@ func readCPUTemp() int {
 	return temp / 1000
 }
 
-func buildBody(hostname string, cpuTemp int) []byte {
-	var bodyMap = raspi{hostname, int8(cpuTemp), time.Now().UnixNano() / int64(time.Millisecond)}
+func readRAMStats() ramStats {
+	rawRamStats := readFile("/proc/meminfo")
+	lines := strings.Split(rawRamStats, "\n")
+	re := regexp.MustCompile(`[0-9]+`)
+	totalMem64, err := strconv.ParseUint(re.FindString(lines[0]), 10, 32)
+	check(err)
+	totalMem := uint32(totalMem64)
+	availableMem64, err := strconv.ParseUint(re.FindString(lines[2]), 10, 32)
+	check(err)
+	availableMem := uint32(availableMem64)
+	return ramStats{totalMem, availableMem, totalMem - availableMem}
+}
+
+func buildBody(hostname string, cpuTemp int, ramStats ramStats) []byte {
+	var bodyMap = stats{hostname, int8(cpuTemp), ramStats, time.Now().UnixNano() / int64(time.Millisecond)}
 	encodedBody, err := json.Marshal(&bodyMap)
 	check(err)
 	return encodedBody
