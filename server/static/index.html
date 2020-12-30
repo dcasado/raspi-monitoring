@@ -39,6 +39,9 @@
             let tr = document.createElement("tr");
             tr.appendChild(buildColumn(raspi["hostname"]));
             tr.appendChild(buildColumn(raspi["cpuTemp"]));
+            tr.appendChild(buildColumn(raspi["ramStats"]["total"]/1000));
+            tr.appendChild(buildColumn(raspi["ramStats"]["available"]/1000));
+            tr.appendChild(buildColumn(raspi["ramStats"]["used"]/1000));
             tr.appendChild(buildColumn(new Date(raspi["timestamp"]).toLocaleString()));
             return tr;
         }
@@ -56,6 +59,9 @@
             <tr>
                 <th>Hostname</th>
                 <th>CPU Temperature</th>
+                <th>Total memory (MB)</th>
+                <th>Available memory (MB)</th>
+                <th>Used memory (MB)</th>
                 <th>Last seen</th>
             </tr>
         </thead>

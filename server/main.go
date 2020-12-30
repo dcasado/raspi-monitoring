@@ -11,9 +11,16 @@ import (
 var data map[string]raspi = make(map[string]raspi)
 
 type raspi struct {
-	Hostname  string `json:"hostname"`
-	CpuTemp   int8   `json:"cpuTemp"`
-	Timestamp int64  `json:"timestamp"`
+	Hostname  string   `json:"hostname"`
+	CpuTemp   int8     `json:"cpuTemp"`
+	RAMStats  ramStats `json:"ramStats"`
+	Timestamp int64    `json:"timestamp"`
+}
+
+type ramStats struct {
+	Total     uint32 `json:"total"`
+	Available uint32 `json:"available"`
+	Used      uint32 `json:"used"`
 }
 
 func main() {
