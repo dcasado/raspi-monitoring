@@ -39,6 +39,7 @@
             let tr = document.createElement("tr");
             tr.appendChild(buildColumn(raspi["hostname"]));
             tr.appendChild(buildColumn(raspi["cpuTemp"]));
+            tr.appendChild(buildColumn(raspi["cpuUsage"].toFixed(2)));
             tr.appendChild(buildColumn(raspi["ramStats"]["total"]/1000));
             tr.appendChild(buildColumn(raspi["ramStats"]["available"]/1000));
             tr.appendChild(buildColumn(raspi["ramStats"]["used"]/1000));
@@ -59,6 +60,7 @@
             <tr>
                 <th>Hostname</th>
                 <th>CPU Temperature</th>
+                <th>CPU Usage (%)</th>
                 <th>Total memory (MB)</th>
                 <th>Available memory (MB)</th>
                 <th>Used memory (MB)</th>

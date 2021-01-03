@@ -13,6 +13,7 @@ var data map[string]raspi = make(map[string]raspi)
 type raspi struct {
 	Hostname  string   `json:"hostname"`
 	CpuTemp   int8     `json:"cpuTemp"`
+	CpuUsage  float64  `json:"cpuUsage"`
 	RAMStats  ramStats `json:"ramStats"`
 	Timestamp int64    `json:"timestamp"`
 }
