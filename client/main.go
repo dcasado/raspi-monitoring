@@ -16,6 +16,7 @@ import (
 type stats struct {
 	Hostname  string   `json:"hostname"`
 	CpuTemp   int8     `json:"cpuTemp"`
+	CpuUsage  float64  `json:"cpuUsage"`
 	RAMStats  ramStats `json:"ramStats"`
 	Timestamp int64    `json:"timestamp"`
 }
@@ -26,12 +27,15 @@ type ramStats struct {
 	Used      uint32 `json:"used"`
 }
 
+var cpuUsage float64
+
 func main() {
 	hostname := getHostname()
 	for {
 		cpuTemp := readCPUTemp()
+		go calculateCPUUsage()
 		ramStats := readRAMStats()
-		body := buildBody(hostname, cpuTemp, ramStats)
+		body := buildBody(hostname, cpuTemp, cpuUsage, ramStats)
 		sendRequest(body)
 		time.Sleep(5 * time.Second)
 	}
@@ -75,8 +79,42 @@ func readRAMStats() ramStats {
 	return ramStats{totalMem, availableMem, totalMem - availableMem}
 }
 
-func buildBody(hostname string, cpuTemp int, ramStats ramStats) []byte {
-	var bodyMap = stats{hostname, int8(cpuTemp), ramStats, time.Now().UnixNano() / int64(time.Millisecond)}
+func calculateCPUUsage() {
+	for {
+		idle0, total0 := readCPUStats()
+		time.Sleep(3 * time.Second)
+		idle1, total1 := readCPUStats()
+		idleTicks := float64(idle1 - idle0)
+		totalTicks := float64(total1 - total0)
+		cpuUsage = 100 * (totalTicks - idleTicks) / totalTicks
+	}
+}
+
+func readCPUStats() (idle, total uint64) {
+	rawRamStats := readFile("/proc/stat")
+	lines := strings.Split(rawRamStats, "\n")
+	for _, line := range(lines) {
+        fields := strings.Fields(line)
+        if fields[0] == "cpu" {
+            numFields := len(fields)
+            for i := 1; i < numFields; i++ {
+                val, err := strconv.ParseUint(fields[i], 10, 64)
+                if err != nil {
+                    log.Println("Error: ", i, fields[i], err)
+                }
+                total += val // tally up all the numbers to get total ticks
+                if i == 4 {  // idle is the 5th field in the cpu line
+                    idle = val
+                }
+            }
+            return
+        }
+	}
+	return
+}
+
+func buildBody(hostname string, cpuTemp int, cpuUsage float64, ramStats ramStats) []byte {
+	var bodyMap = stats{hostname, int8(cpuTemp), cpuUsage, ramStats, time.Now().UnixNano() / int64(time.Millisecond)}
 	encodedBody, err := json.Marshal(&bodyMap)
 	check(err)
 	return encodedBody
