@@ -31,9 +31,9 @@ var cpuUsage float64
 
 func main() {
 	hostname := getHostname()
+	go calculateCPUUsage()
 	for {
 		cpuTemp := readCPUTemp()
-		go calculateCPUUsage()
 		ramStats := readRAMStats()
 		body := buildBody(hostname, cpuTemp, cpuUsage, ramStats)
 		sendRequest(body)
