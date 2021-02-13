@@ -44,6 +44,7 @@
             tr.appendChild(buildColumn(raspi["ramStats"]["available"]/1000));
             tr.appendChild(buildColumn(raspi["ramStats"]["used"]/1000));
             tr.appendChild(buildColumn(new Date(raspi["timestamp"]).toLocaleString()));
+            tr.appendChild(buildColumn(raspi["up"]));
             return tr;
         }
 
@@ -65,6 +66,7 @@
                 <th>Available memory (MB)</th>
                 <th>Used memory (MB)</th>
                 <th>Last seen</th>
+                <th>Up</th>
             </tr>
         </thead>
         <tbody id="data-table-body">

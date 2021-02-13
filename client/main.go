@@ -19,6 +19,7 @@ type stats struct {
 	CpuUsage  float64  `json:"cpuUsage"`
 	RAMStats  ramStats `json:"ramStats"`
 	Timestamp int64    `json:"timestamp"`
+	Up        bool     `json:"up"`
 }
 
 type ramStats struct {
@@ -118,7 +119,7 @@ func readCPUStats() (idle, total uint64) {
 }
 
 func buildBody(hostname string, cpuTemp int, cpuUsage float64, ramStats ramStats) []byte {
-	var bodyMap = stats{hostname, int8(cpuTemp), cpuUsage, ramStats, time.Now().UnixNano() / int64(time.Millisecond)}
+	var bodyMap = stats{hostname, int8(cpuTemp), cpuUsage, ramStats, time.Now().UTC().UnixNano() / int64(time.Millisecond), true}
 	encodedBody, err := json.Marshal(&bodyMap)
 	check(err)
 	return encodedBody
