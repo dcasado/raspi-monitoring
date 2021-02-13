@@ -13,7 +13,9 @@ WORKDIR /app
 
 COPY --from=build /go/src/github.com/dcasado/raspi-monitoring-server/main .
 COPY static ./static
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 EXPOSE 80
 
-ENTRYPOINT ["./main"]
+ENTRYPOINT ["./entrypoint.sh"]
