@@ -9,6 +9,11 @@ RUN CGO_ENABLED=0 GOOS=linux && go build main.go
 
 FROM debian:10.3-slim  
 
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates
+
+RUN update-ca-certificates
+
 WORKDIR /app
 
 COPY --from=build /go/src/github.com/dcasado/raspi-monitoring-server/main .
