@@ -26,8 +26,7 @@
                 .then(function (data) {
                     let newTbody = document.createElement("tbody");
                     newTbody.setAttribute("id", "data-table-body");
-                    for (const id in data) {
-                        const raspi = data[id]
+                    for (const raspi of data) {
                         newTbody.appendChild(buildRow(raspi))
                     }
                     let oldTbody = document.getElementById("data-table-body");

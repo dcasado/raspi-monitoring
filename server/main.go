@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -9,11 +10,16 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
-var data map[string]*raspi = make(map[string]*raspi)
 var gotifyURL = os.Getenv("GOTIFY_URL")
 var gotifyToken = os.Getenv("GOTIFY_TOKEN")
+
+var dbFilePath = os.Getenv("DB_FILE_PATH")
+
+var db *sql.DB
 
 type raspi struct {
 	Hostname  string   `json:"hostname"`
@@ -37,6 +43,8 @@ type gotifyMessage struct {
 }
 
 func main() {
+	db = createDB()
+	defer db.Close()
 	go checkLastTimestamp()
 	http.HandleFunc("/data", handleData)
 
@@ -50,11 +58,12 @@ func main() {
 func checkLastTimestamp() {
 	for {
 		now := time.Now().UTC().UnixNano() / int64(time.Millisecond)
-		for key, element := range data {
+		data := readAllData()
+		for _, element := range data {
 			if now-element.Timestamp > 60000 && element.Up {
-				element.Up = false
+				updateUp(element.Hostname, false)
 				title := "Raspberry Pi is down"
-				message := fmt.Sprintf("Raspberry Pi %s is down!!", key)
+				message := fmt.Sprintf("Raspberry Pi %s is down!!", element.Hostname)
 				sendGotifyNotification(title, 8, message)
 			}
 		}
@@ -74,9 +83,118 @@ func sendGotifyNotification(title string, priority int8, message string) {
 	}
 }
 
+func createDB() *sql.DB {
+	db, err := sql.Open("sqlite3", dbFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	sqlStmt := `
+	create table data (hostname text not null primary key, cpu_temp integer, cpu_usage float, ram_total integer, ram_available integer, ram_used integer, timestamp integer, up integer);
+	`
+	_, err = db.Exec(sqlStmt)
+	if err != nil {
+		log.Printf("%q: %s\n", err, sqlStmt)
+		return db
+	}
+	return db
+}
+
+func readAllData() []raspi {
+	rows, err := db.Query("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from data")
+	if err != nil {
+		log.Fatal(err)
+	}
+	var data []raspi
+	for rows.Next() {
+		raspiData := raspi{}
+		err = rows.Scan(&raspiData.Hostname, &raspiData.CpuTemp, &raspiData.CpuUsage, &raspiData.RAMStats.Total, &raspiData.RAMStats.Available, &raspiData.RAMStats.Used, &raspiData.Timestamp, &raspiData.Up)
+		if err != nil {
+			log.Fatal(err)
+		}
+		data = append(data, raspiData)
+	}
+	err = rows.Err()
+	if err != nil {
+		log.Fatal(err)
+	}
+	rows.Close()
+	return data
+}
+
+func readRaspiData(hostname string) raspi {
+	rows, err := db.Query("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from data")
+	if err != nil {
+		log.Fatal(err)
+	}
+	var data raspi
+	for rows.Next() {
+		err = rows.Scan(&data.Hostname, &data.CpuTemp, &data.CpuUsage, &data.RAMStats.Total, &data.RAMStats.Available, &data.RAMStats.Used, &data.Timestamp, &data.Up)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	err = rows.Err()
+	if err != nil {
+		log.Fatal(err)
+	}
+	rows.Close()
+	return data
+}
+
+func writeData(data raspi) {
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmt, err := tx.Prepare("update data set cpu_temp=?, cpu_usage=?, ram_total=?, ram_available=?, ram_used=?, timestamp=?, up=? where hostname=?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	updateResult, err := stmt.Exec(data.CpuTemp, data.CpuUsage, data.RAMStats.Total, data.RAMStats.Available, data.RAMStats.Used, data.Timestamp, data.Up, data.Hostname)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmt.Close()
+	rows, err := updateResult.RowsAffected()
+	if rows == 0 {
+		stmt, err := tx.Prepare("insert into data(hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up) values(?,?,?,?,?,?,?,?)")
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = stmt.Exec(data.Hostname, data.CpuTemp, data.CpuUsage, data.RAMStats.Total, data.RAMStats.Available, data.RAMStats.Used, data.Timestamp, data.Up)
+		if err != nil {
+			log.Fatal(err)
+		}
+		stmt.Close()
+	}
+	// End transaction
+	tx.Commit()
+}
+
+func updateUp(hostname string, up bool) {
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmt, err := tx.Prepare("update data set up=? where hostname=?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = stmt.Exec(up, hostname)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmt.Close()
+	// End transaction
+	tx.Commit()
+}
+
 func handleData(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
+		data := readAllData()
 		jsonData, _ := json.Marshal(data)
 		fmt.Fprintf(w, `%v`, string(jsonData))
 	case "POST":
@@ -89,13 +207,13 @@ func handleData(w http.ResponseWriter, r *http.Request) {
 			panic(err)
 		}
 
-		lastRaspiUpdate := data[r.Hostname]
-		if lastRaspiUpdate != nil && !lastRaspiUpdate.Up && r.Up {
+		lastRaspiUpdate := readRaspiData(r.Hostname)
+		if !lastRaspiUpdate.Up && r.Up {
 			title := "Raspberry Pi is back online"
 			message := fmt.Sprintf("Raspberry Pi %s is running again!!", r.Hostname)
 			sendGotifyNotification(title, 8, message)
 		}
-		data[r.Hostname] = &r
+		writeData(r)
 	default:
 		fmt.Fprintf(w, "Only GET and POST methods are supported.")
 	}
