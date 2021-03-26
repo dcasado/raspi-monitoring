@@ -122,22 +122,16 @@ func readAllData() []raspi {
 }
 
 func readRaspiData(hostname string) raspi {
-	rows, err := db.Query("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from data")
+	stmt, err := db.Prepare("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from data where hostname=?")
 	if err != nil {
 		log.Fatal(err)
 	}
 	var data raspi
-	for rows.Next() {
-		err = rows.Scan(&data.Hostname, &data.CpuTemp, &data.CpuUsage, &data.RAMStats.Total, &data.RAMStats.Available, &data.RAMStats.Used, &data.Timestamp, &data.Up)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	err = rows.Err()
+	err = stmt.QueryRow(hostname).Scan(&data.Hostname, &data.CpuTemp, &data.CpuUsage, &data.RAMStats.Total, &data.RAMStats.Available, &data.RAMStats.Used, &data.Timestamp, &data.Up)
 	if err != nil {
 		log.Fatal(err)
 	}
-	rows.Close()
+	stmt.Close()
 	return data
 }
 
