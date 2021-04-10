@@ -129,7 +129,11 @@ func readRaspiData(hostname string) raspi {
 	var data raspi
 	err = stmt.QueryRow(hostname).Scan(&data.Hostname, &data.CpuTemp, &data.CpuUsage, &data.RAMStats.Total, &data.RAMStats.Available, &data.RAMStats.Used, &data.Timestamp, &data.Up)
 	if err != nil {
-		log.Fatal(err)
+		if err == sql.ErrNoRows {
+			// there were no rows, but otherwise no error occurred
+		} else {
+			log.Fatal(err)
+		}
 	}
 	stmt.Close()
 	return data
