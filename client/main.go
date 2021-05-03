@@ -14,12 +14,10 @@ import (
 )
 
 type stats struct {
-	Hostname  string   `json:"hostname"`
-	CpuTemp   int8     `json:"cpuTemp"`
-	CpuUsage  float64  `json:"cpuUsage"`
-	RAMStats  ramStats `json:"ramStats"`
-	Timestamp int64    `json:"timestamp"`
-	Up        bool     `json:"up"`
+	Hostname string   `json:"hostname"`
+	CpuTemp  int8     `json:"cpuTemp"`
+	CpuUsage float64  `json:"cpuUsage"`
+	RAMStats ramStats `json:"ramStats"`
 }
 
 type ramStats struct {
@@ -119,7 +117,7 @@ func readCPUStats() (idle, total uint64) {
 }
 
 func buildBody(hostname string, cpuTemp int, cpuUsage float64, ramStats ramStats) []byte {
-	var bodyMap = stats{hostname, int8(cpuTemp), cpuUsage, ramStats, time.Now().UTC().UnixNano() / int64(time.Millisecond), true}
+	var bodyMap = stats{hostname, int8(cpuTemp), cpuUsage, ramStats}
 	encodedBody, err := json.Marshal(&bodyMap)
 	check(err)
 	return encodedBody
@@ -127,7 +125,7 @@ func buildBody(hostname string, cpuTemp int, cpuUsage float64, ramStats ramStats
 
 func sendRequest(body []byte) {
 	var serverURL = os.Getenv("SERVER_URL")
-	resp, err := http.Post(serverURL+"/data", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(serverURL+"/devices", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		log.Println(err)
 		return
