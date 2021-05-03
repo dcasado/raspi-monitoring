@@ -65,6 +65,12 @@ func checkLastTimestamp() {
 				title := "Raspberry Pi is down"
 				message := fmt.Sprintf("Raspberry Pi %s is down!!", element.Hostname)
 				sendGotifyNotification(title, 8, message)
+				// If raspi has been down for more than a week, remove it
+			} else if now-element.Timestamp > 60000*60*24*7 && !element.Up {
+				removeData(element.Hostname)
+				title := "Raspberry Pi removed from database"
+				message := fmt.Sprintf("Stale Raspberry Pi %s has been removed from database", element.Hostname)
+				sendGotifyNotification(title, 3, message)
 			}
 		}
 		time.Sleep(5 * time.Second)
@@ -166,6 +172,25 @@ func writeData(data raspi) {
 		}
 		stmt.Close()
 	}
+	// End transaction
+	tx.Commit()
+}
+
+func removeData(hostname string) {
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmt, err := tx.Prepare("delete from data where hostname=?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	deleteResult, err := stmt.Exec(hostname)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = deleteResult.RowsAffected()
 	// End transaction
 	tx.Commit()
 }
