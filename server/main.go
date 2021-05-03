@@ -21,7 +21,14 @@ var dbFilePath = os.Getenv("DB_FILE_PATH")
 
 var db *sql.DB
 
-type raspi struct {
+type postDeviceDTO struct {
+	Hostname string   `json:"hostname"`
+	CpuTemp  int8     `json:"cpuTemp"`
+	CpuUsage float64  `json:"cpuUsage"`
+	RAMStats ramStats `json:"ramStats"`
+}
+
+type deviceRow struct {
 	Hostname  string   `json:"hostname"`
 	CpuTemp   int8     `json:"cpuTemp"`
 	CpuUsage  float64  `json:"cpuUsage"`
@@ -46,7 +53,7 @@ func main() {
 	db = createDB()
 	defer db.Close()
 	go checkLastTimestamp()
-	http.HandleFunc("/data", handleData)
+	http.HandleFunc("/devices", handleDevices)
 
 	fs := http.FileServer(http.Dir("static"))
 	http.Handle("/", fs)
@@ -57,19 +64,19 @@ func main() {
 
 func checkLastTimestamp() {
 	for {
-		now := time.Now().UTC().UnixNano() / int64(time.Millisecond)
-		data := readAllData()
-		for _, element := range data {
-			if now-element.Timestamp > 60000 && element.Up {
-				updateUp(element.Hostname, false)
-				title := "Raspberry Pi is down"
-				message := fmt.Sprintf("Raspberry Pi %s is down!!", element.Hostname)
+		now := time.Now().UTC().UnixNano()
+		devices := getAllDevices()
+		for _, device := range devices {
+			if now-device.Timestamp > int64(time.Minute) && device.Up {
+				updateDeviceUp(device.Hostname, false)
+				title := "Device is down"
+				message := fmt.Sprintf("Device %s is down!!", device.Hostname)
 				sendGotifyNotification(title, 8, message)
-				// If raspi has been down for more than a week, remove it
-			} else if now-element.Timestamp > 60000*60*24*7 && !element.Up {
-				removeData(element.Hostname)
-				title := "Raspberry Pi removed from database"
-				message := fmt.Sprintf("Stale Raspberry Pi %s has been removed from database", element.Hostname)
+				// If device has been down for more than a week, remove it
+			} else if now-device.Timestamp > int64(time.Hour)*24*7 && !device.Up {
+				removeDevice(device.Hostname)
+				title := "Device removed from database"
+				message := fmt.Sprintf("Stale Device %s has been removed from database", device.Hostname)
 				sendGotifyNotification(title, 3, message)
 			}
 		}
@@ -95,78 +102,82 @@ func createDB() *sql.DB {
 		log.Fatal(err)
 	}
 	sqlStmt := `
-	create table data (hostname text not null primary key, cpu_temp integer, cpu_usage float, ram_total integer, ram_available integer, ram_used integer, timestamp integer, up integer);
+	create table devices (hostname text not null primary key, cpu_temp integer, cpu_usage float, ram_total integer, ram_available integer, ram_used integer, timestamp integer, up integer);
 	`
 	_, err = db.Exec(sqlStmt)
 	if err != nil {
-		log.Printf("%q: %s\n", err, sqlStmt)
+		log.Printf("%s", err)
 		return db
 	}
 	return db
 }
 
-func readAllData() []raspi {
-	rows, err := db.Query("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from data")
+func getAllDevices() []deviceRow {
+	rows, err := db.Query("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from devices")
 	if err != nil {
 		log.Fatal(err)
 	}
-	var data []raspi
+	var devices []deviceRow
 	for rows.Next() {
-		raspiData := raspi{}
-		err = rows.Scan(&raspiData.Hostname, &raspiData.CpuTemp, &raspiData.CpuUsage, &raspiData.RAMStats.Total, &raspiData.RAMStats.Available, &raspiData.RAMStats.Used, &raspiData.Timestamp, &raspiData.Up)
+		device := deviceRow{}
+		err = rows.Scan(&device.Hostname, &device.CpuTemp, &device.CpuUsage, &device.RAMStats.Total, &device.RAMStats.Available, &device.RAMStats.Used, &device.Timestamp, &device.Up)
 		if err != nil {
 			log.Fatal(err)
 		}
-		data = append(data, raspiData)
+		devices = append(devices, device)
 	}
 	err = rows.Err()
 	if err != nil {
 		log.Fatal(err)
 	}
 	rows.Close()
-	return data
+	return devices
 }
 
-func readRaspiData(hostname string) raspi {
-	stmt, err := db.Prepare("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from data where hostname=?")
+func getDeviceByHostname(hostname string) *deviceRow {
+	stmt, err := db.Prepare("select hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up from devices where hostname=?")
 	if err != nil {
 		log.Fatal(err)
 	}
-	var data raspi
-	err = stmt.QueryRow(hostname).Scan(&data.Hostname, &data.CpuTemp, &data.CpuUsage, &data.RAMStats.Total, &data.RAMStats.Available, &data.RAMStats.Used, &data.Timestamp, &data.Up)
+	var device deviceRow
+	err = stmt.QueryRow(hostname).Scan(&device.Hostname, &device.CpuTemp, &device.CpuUsage, &device.RAMStats.Total, &device.RAMStats.Available, &device.RAMStats.Used, &device.Timestamp, &device.Up)
+	defer stmt.Close()
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// there were no rows, but otherwise no error occurred
+			return nil
 		} else {
 			log.Fatal(err)
 		}
 	}
-	stmt.Close()
-	return data
+	return &device
 }
 
-func writeData(data raspi) {
+func updateOrInsertDevice(device deviceRow) {
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt, err := tx.Prepare("update data set cpu_temp=?, cpu_usage=?, ram_total=?, ram_available=?, ram_used=?, timestamp=?, up=? where hostname=?")
+	stmt, err := tx.Prepare("update devices set cpu_temp=?, cpu_usage=?, ram_total=?, ram_available=?, ram_used=?, timestamp=?, up=? where hostname=?")
 	if err != nil {
 		log.Fatal(err)
 	}
-	updateResult, err := stmt.Exec(data.CpuTemp, data.CpuUsage, data.RAMStats.Total, data.RAMStats.Available, data.RAMStats.Used, data.Timestamp, data.Up, data.Hostname)
+	updateResult, err := stmt.Exec(device.CpuTemp, device.CpuUsage, device.RAMStats.Total, device.RAMStats.Available, device.RAMStats.Used, device.Timestamp, device.Up, device.Hostname)
 	if err != nil {
 		log.Fatal(err)
 	}
 	stmt.Close()
 	rows, err := updateResult.RowsAffected()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if rows == 0 {
-		stmt, err := tx.Prepare("insert into data(hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up) values(?,?,?,?,?,?,?,?)")
+		stmt, err := tx.Prepare("insert into devices(hostname, cpu_temp, cpu_usage, ram_total, ram_available, ram_used, timestamp, up) values(?,?,?,?,?,?,?,?)")
 		if err != nil {
 			log.Fatal(err)
 		}
-		_, err = stmt.Exec(data.Hostname, data.CpuTemp, data.CpuUsage, data.RAMStats.Total, data.RAMStats.Available, data.RAMStats.Used, data.Timestamp, data.Up)
+		_, err = stmt.Exec(device.Hostname, device.CpuTemp, device.CpuUsage, device.RAMStats.Total, device.RAMStats.Available, device.RAMStats.Used, device.Timestamp, device.Up)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -176,13 +187,13 @@ func writeData(data raspi) {
 	tx.Commit()
 }
 
-func removeData(hostname string) {
+func removeDevice(hostname string) {
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt, err := tx.Prepare("delete from data where hostname=?")
+	stmt, err := tx.Prepare("delete from devices where hostname=?")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -191,17 +202,20 @@ func removeData(hostname string) {
 		log.Fatal(err)
 	}
 	_, err = deleteResult.RowsAffected()
+	if err != nil {
+		log.Fatal(err)
+	}
 	// End transaction
 	tx.Commit()
 }
 
-func updateUp(hostname string, up bool) {
+func updateDeviceUp(hostname string, up bool) {
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt, err := tx.Prepare("update data set up=? where hostname=?")
+	stmt, err := tx.Prepare("update devices set up=? where hostname=?")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -214,30 +228,42 @@ func updateUp(hostname string, up bool) {
 	tx.Commit()
 }
 
-func handleData(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
+func handleDevices(w http.ResponseWriter, request *http.Request) {
+	switch request.Method {
 	case "GET":
-		data := readAllData()
-		jsonData, _ := json.Marshal(data)
+		devices := getAllDevices()
+		jsonData, _ := json.Marshal(devices)
 		fmt.Fprintf(w, `%v`, string(jsonData))
 	case "POST":
-		b, err := ioutil.ReadAll(r.Body)
+		body, err := ioutil.ReadAll(request.Body)
 		if err != nil {
 			panic(err)
 		}
-		var r raspi
-		if err := json.Unmarshal(b, &r); err != nil {
+		var deviceDTO postDeviceDTO
+		if err := json.Unmarshal(body, &deviceDTO); err != nil {
 			panic(err)
 		}
 
-		lastRaspiUpdate := readRaspiData(r.Hostname)
-		if !lastRaspiUpdate.Up && r.Up {
-			title := "Raspberry Pi is back online"
-			message := fmt.Sprintf("Raspberry Pi %s is running again!!", r.Hostname)
+		lastDeviceUpdate := getDeviceByHostname(deviceDTO.Hostname)
+		if lastDeviceUpdate != nil && !lastDeviceUpdate.Up {
+			title := "Device is back online"
+			message := fmt.Sprintf("Device %s is running again!!", deviceDTO.Hostname)
 			sendGotifyNotification(title, 8, message)
 		}
-		writeData(r)
+		deviceRow := convertFromRequestToRow(deviceDTO)
+		updateOrInsertDevice(deviceRow)
 	default:
 		fmt.Fprintf(w, "Only GET and POST methods are supported.")
+	}
+}
+
+func convertFromRequestToRow(deviceDTO postDeviceDTO) deviceRow {
+	return deviceRow{
+		deviceDTO.Hostname,
+		deviceDTO.CpuTemp,
+		deviceDTO.CpuUsage,
+		deviceDTO.RAMStats,
+		time.Now().UTC().UnixNano(),
+		true,
 	}
 }

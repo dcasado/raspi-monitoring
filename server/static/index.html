@@ -19,31 +19,39 @@
         }, 5000);
 
         function fetchData(url) {
-            fetch(url + "/data")
+            fetch(url + "/devices")
                 .then(function (response) {
                     return response.json();
                 })
-                .then(function (data) {
-                    let newTbody = document.createElement("tbody");
-                    newTbody.setAttribute("id", "data-table-body");
-                    for (const raspi of data) {
-                        newTbody.appendChild(buildRow(raspi))
+                .then(function (devices) {
+                    if (devices != null) {
+                        let newTbody = document.createElement("tbody");
+                        newTbody.setAttribute("id", "devices-table-body");
+                        for (const device of devices) {
+                            newTbody.appendChild(buildRow(device))
+                        }
+                        let oldTbody = document.getElementById("devices-table-body");
+                        oldTbody.parentNode.replaceChild(newTbody, oldTbody)
                     }
-                    let oldTbody = document.getElementById("data-table-body");
-                    oldTbody.parentNode.replaceChild(newTbody, oldTbody)
                 });
         }
 
-        function buildRow(raspi) {
+        function buildRow(device) {
             let tr = document.createElement("tr");
-            tr.appendChild(buildColumn(raspi["hostname"]));
-            tr.appendChild(buildColumn(raspi["cpuTemp"]));
-            tr.appendChild(buildColumn(raspi["cpuUsage"].toFixed(2)));
-            tr.appendChild(buildColumn(raspi["ramStats"]["total"]/1000));
-            tr.appendChild(buildColumn(raspi["ramStats"]["available"]/1000));
-            tr.appendChild(buildColumn(raspi["ramStats"]["used"]/1000));
-            tr.appendChild(buildColumn(new Date(raspi["timestamp"]).toLocaleString()));
-            tr.appendChild(buildColumn(raspi["up"]));
+            tr.appendChild(buildColumn(device["hostname"]));
+            tr.appendChild(buildColumn(device["cpuTemp"]));
+            tr.appendChild(buildColumn(device["cpuUsage"].toFixed(2)));
+            tr.appendChild(buildColumn(device["ramStats"]["total"] / 1000));
+            tr.appendChild(buildColumn(device["ramStats"]["available"] / 1000));
+            tr.appendChild(buildColumn(device["ramStats"]["used"] / 1000));
+            tr.appendChild(buildColumn(new Date(device["timestamp"] / 1000000).toLocaleString()));
+            let upColumn = buildColumn("")
+            if (device["up"]) {
+                upColumn.style.backgroundColor = "green";
+            } else {
+                upColumn.style.backgroundColor = "red";
+            }
+            tr.appendChild(upColumn);
             return tr;
         }
 
@@ -54,8 +62,8 @@
             return td;
         }
     </script>
-    <h1>Raspberry pi data</h1>
-    <table id="data-table">
+    <h1>Devices</h1>
+    <table id="devices-table">
         <thead>
             <tr>
                 <th>Hostname</th>
@@ -68,7 +76,7 @@
                 <th>Up</th>
             </tr>
         </thead>
-        <tbody id="data-table-body">
+        <tbody id="devices-table-body">
         </tbody>
     </table>
 </body>
